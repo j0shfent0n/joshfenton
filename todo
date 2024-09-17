@@ -1,0 +1,47 @@
+to_do_list = []
+
+def main():
+    while True:
+
+        Action = int(input('''What please choose an option:
+                       1. Add Task
+                       2. Remove Task
+                       3. View to do list
+                       4. Close to do list
+                       '''))
+        if Action == 1:
+            Task = input('What task would you like to add? ')
+            to_do_list.append(Task)
+            updated_to_do_list = input('Would you like to see your updated to do list? (Yes/No)').lower()
+            if updated_to_do_list == 'yes':
+                print(to_do_list)
+            else:
+                print('Okay')
+            
+        elif Action == 2:
+            Task = input('What task would you like to remove? ')
+            if Task in to_do_list:
+                to_do_list.remove(Task)
+                updated_to_do_list = input('Would you like to see your updated to do list? (Yes/No)').lower()
+                if updated_to_do_list == 'yes':
+                    print(to_do_list)
+                else:
+                    print('Okay')
+            
+        elif Action == 3:
+            if to_do_list:
+                print('Your to do list: ')
+                print(to_do_list)
+            else:
+                print('Your to do list is empty ')
+
+            
+        elif Action == 4:
+            print('Goodbye')
+            break
+
+        else:
+            print('Please enter a valid option: ')
+            continue
+
+main()
