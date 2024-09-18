@@ -1,0 +1,48 @@
+mood_log = []
+def main():
+    while True:
+        
+        date = input('What is today\'s date?' )
+        mood_tracker = int(input('''
+                 How would you rate your mood today on a scale of 1 to 5?
+                 1. Calm and Relaxed
+                 2. Feeling okay
+                 3. I am a little nervous/anxious
+                 4. I am more towards the iritated/angry side
+                 5. I am going to explode
+                 '''))
+       
+        if mood_tracker == 1:
+            mood_log.append((f'{date}, {mood_tracker} - Calm and relaxed'))
+            print(f'{mood_tracker} was added to your mood log')
+            print(mood_log)
+            break
+        
+        elif mood_tracker == 2:
+            mood_log.append((f'{date}, {mood_tracker} - Feeling okay'))
+            print(f'{mood_tracker} was added to your mood log')
+            print(mood_log)
+            break
+
+        elif mood_tracker == 3:
+            mood_log.append((f'{date}, {mood_tracker} - I am a little nervous/anxious'))
+            print(f'{mood_tracker} was added to your mood log')
+            print(mood_log)
+            break
+
+        elif mood_tracker == 4:
+           mood_log.append((f'{date}, {mood_tracker} - I am more towards the iritated/angry side'))
+            print(f'{mood_tracker} was added to your mood log')
+            print(mood_log)
+            break
+
+        elif mood_tracker == 5:
+            mood_log.append((f'{date}, {mood_tracker} - I am going to explode'))
+            print(f'{mood_tracker} was added to your mood log')
+            print(mood_log)
+            break
+        else:
+            print('Please enter a valid option ')
+            continue
+main()
+        
