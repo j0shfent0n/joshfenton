@@ -1,0 +1,39 @@
+# #Book recommendation system
+library = {}
+
+def main():
+    while True:
+        #Get the input from the user
+        library_options = int(input( """"
+        How can I help you today?
+        1. I would like to add a book to my library
+        2. I would like to view my library
+        3. I would like to search my library
+        """))
+
+        if library_options == 1:
+            book_title = input('What is the name of the book you would like to add? ').title()
+            author_name = input(f'Who is the author of {book_title}? ').title()
+            genre = input('Genre? ').title()
+            library[book_title] = {'Author': author_name, 'Genre': genre}
+            print('Your library has successfully been updated ')
+            print(library)
+            additional = input('Would you like to continue? (yes/no)').lower()
+            if additional == 'yes':
+                continue
+            else:
+                print('Goodbye')    
+
+
+        elif library_options == 2:
+            if library:
+                print("Your library: ") 
+                for title, details in library.items():
+                    print("f'Title: {title}, Author: {details['Author'], Genre: {details['Genre']}")
+            else:
+                print('Your library is empty')
+        
+
+        elif library_options == 3:
+
+main()
