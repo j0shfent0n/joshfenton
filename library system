@@ -4,36 +4,52 @@ library = {}
 def main():
     while True:
         #Get the input from the user
-        library_options = int(input( """"
+        library_options = input( """"
         How can I help you today?
         1. I would like to add a book to my library
         2. I would like to view my library
         3. I would like to search my library
-        """))
+        """)
 
-        if library_options == 1:
+        # if user inputs 1, ask the user for the book title, author, genre and rating. Return one piece of information per line
+        if library_options == '1':
             book_title = input('What is the name of the book you would like to add? ').title()
             author_name = input(f'Who is the author of {book_title}? ').title()
             genre = input('Genre? ').title()
-            library[book_title] = {'Author': author_name, 'Genre': genre}
-            print('Your library has successfully been updated ')
-            print(library)
-            additional = input('Would you like to continue? (yes/no)').lower()
+            rating = input('On a scale of 1 to 5 stars, how would you rate this book? ')
+            library[book_title] = {'Author': author_name, 'Genre': genre, 'Rating': rating}
+            print('Your library has successfully been updated: \n ')
+            for title, details in library.items():
+                print(f"Title: {title}\nAuthor: {details['Author']}\nGenre: {details['Genre']}\nRating: {rating}")
+            additional = input('Would you like to continue? (yes/no) ').lower()
             if additional == 'yes':
                 continue
             else:
-                print('Goodbye')    
+                print('Goodbye')
+                break   
 
-
-        elif library_options == 2:
+        # if user inputs 2, print the users library, if the user has nothing in their library, tell the user they have nothing in their library
+        elif library_options == '2':
             if library:
                 print("Your library: ") 
                 for title, details in library.items():
-                    print("f'Title: {title}, Author: {details['Author'], Genre: {details['Genre']}")
+                    print(f"Title: {book_title}, Author: {details['Author']}, Genre: {details['Genre']}, 'Rating: {details['Rating']}")
             else:
                 print('Your library is empty')
         
 
-        elif library_options == 3:
+        # if user inputs 3, ask the user the title of the book they are looking for, based off of the title, return author, genre and rating
+        elif library_options == '3':
+            library_search = input('What is the title of the book you are looking for? ').title()
+            if library_search in library:
+                print(f"Title: {library_search}, Author: {library[library_search]['Author']}, Genre: {library[library_search]['Genre']}, Rating: {library[library_search]['Rating']}")
+            else:
+                print('This book is not available in your library')
+
+        else:
+            print('Please enter a valid option')
+            continue
+
+
 
 main()
