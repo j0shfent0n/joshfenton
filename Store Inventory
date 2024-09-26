@@ -1,0 +1,47 @@
+#Create a class Item that has attributes for the item’s name, price, and quantity.
+# Create a class Inventory that manages a list of items.
+# The inventory should have methods to:
+# Add an item.
+# Remove an item.
+# List all items in the inventory.
+# Calculate the total value of the inventory (price × quantity for each item).
+
+class Item:
+    def __init__(self, name, price, quantity):
+        self.name = name
+        self.price = price
+        self.quantity = quantity
+
+class Inventory:
+    def __init__(self):
+        self.inventory = []
+        
+    def add_item(self, item):
+        self.inventory.append(item)
+        print(f'{item.name} has been added to your inventory')
+
+    def remove_item(self,item):
+        if item in self.inventory:
+            self.inventory.remove(item)
+            print(f'{item.name} has been removed from your inventory')
+        else:
+            print(f'{item.name} is not in your inventory')
+
+    def list_items(self):
+        if not self.inventory:
+            print('The inventory is empty')
+        else:
+            for item in self.inventory:
+                print(f'{item.name}: ${item.price}, Quantity: {item.quantity}')
+        return self.inventory
+
+    def calculate_inventory(self):
+        total_value = sum(item.price * item.quantity for item in self.inventory)
+        print(f"Tital inventory valie is: ${total_value}")
+
+
+
+toys = Item('toys', 35, 11)
+store_inventory = Inventory()
+store_inventory.add_item(toys)
+store_inventory.list_items()
