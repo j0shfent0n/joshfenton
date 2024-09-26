@@ -1,0 +1,36 @@
+# 1. Create a Simple Bank Account System
+# Create a BankAccount class that allows users to deposit, withdraw, and check their balance.
+# The class should have:
+# Attributes: balance, account_holder
+# Methods: deposit(amount), withdraw(amount), get_balance()
+# Make sure to handle cases where the withdrawal amount exceeds the balance.
+
+class BankAccount(object):
+
+    def __init__(self, balance, account_holder):
+        self.balance = balance
+        self.account_holder = account_holder
+
+    def deposit(self, amount):
+        self.balance += amount
+        print(f'Your new balance after depositing ${amount} is ${self.balance}')
+        
+
+    def withdraw(self, amount):
+        if self.balance >= amount:
+                self.balance -= amount
+                print(f'Your new balance after withdrawing ${amount} is ${self.balance}')
+        else:
+             print(f'You cannot withdraw an amount larger than {self.balance}. Please try a different amount')
+            
+            
+        
+
+    def get_balance(self):
+        print(f'Your balance is {self.balance}')
+
+BA = BankAccount(0, 'Josh')
+
+BA.deposit(30)
+BA.withdraw(40)
+BA.get_balance()
