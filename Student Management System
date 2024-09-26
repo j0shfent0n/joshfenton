@@ -1,0 +1,35 @@
+# Student Management System
+# Create a Student class that has attributes like name, age, and grades (a list of grades).
+# Add methods to:
+# Add a grade.
+# Calculate the average grade.
+# Display student details.
+
+class Student:
+
+    def __init__(self, name, age, grade):
+        self.name = name 
+        self.age = age
+        self.grades = [grade]
+
+    def add_grade(self, grade):
+        self.grades.append(grade)
+        print(f'Your grade of {grade} has been entered into the gradebook')
+
+    def average_grade(self):
+        if self.grades:
+            avg = sum(self.grades) / len(self.grades)
+            print(f'The average grade for {self.name} is {avg:.2f}')
+        else:
+            print(f'{self.name} has no grades to average')
+
+    def student_details(self):
+         print(f'Name: {self.name}, Age: {self.age}, Grade: {self.grades}')
+
+
+
+
+student_1 = Student('Josh', 28, 85)
+student_1.student_details()
+student_1.add_grade(90)
+student_1.student_details()
