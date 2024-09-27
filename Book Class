@@ -1,0 +1,26 @@
+# Create a Book Class
+# Define a class Book with attributes like title, author, and pages.
+# Add a method to display the details of the book.
+# Add another method to calculate and return the reading time based on an average reading speed (e.g., 1 page per minute).
+
+class Book:
+    def __init__(self, title, author, pages):
+      self.title = title
+      self.author = author
+      self.pages = pages
+
+    #return details about the book
+    def book_details(self):
+      return f'Title: {self.title}, Author: {self.author}, Pages: {self.pages}'
+   
+    #calculate how fast a person reads
+    #how fast does a person read the book
+    #what is the persons reading speed
+    def reading_speed(self, speed=1):
+      time = self.pages/speed
+      return f'Estimated reading reading time is {time}'
+   
+
+book_1 = Book('Skin in the game', 'Nassim Taleb', 290)
+print(book_1.book_details())
+print(book_1.reading_speed(1))
