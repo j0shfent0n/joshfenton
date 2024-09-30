@@ -1,0 +1,36 @@
+# Simple Inheritance Example
+# Create a Person class with properties like name and age.
+# Create a subclass Employee that inherits from Person and adds properties employee_id and position.
+# Add a method to Employee to display their full information.
+
+class Person:
+    def __init__ (self, name, age):
+        self.name = name
+        self.age = age
+        self.log = []
+
+    def employee_name(self):
+         print(f'{self.name}, {self.age}')
+
+    def add_to_log(self):
+        self.log.append(self.name)     
+              
+
+class Employee(Person):
+    def __init__(self, name, age, employee_id, position):
+        super().__init__(name, age)
+        self.employee_id = employee_id
+        self.position = position
+        
+
+    def employee_info(self):
+        if not self.log:
+             print('This employee\'s name is not in the log, please try again')
+        else:
+            print(f'{self.name}, {self.age}, {self.employee_id}, {self.position}')
+
+    
+employee1 = Employee('Josh', 28, 1234, 'star')
+employee1.add_to_log()
+employee1.employee_name()
+employee1.employee_info()
