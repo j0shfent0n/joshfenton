@@ -1,0 +1,74 @@
+# Create a Technique class with attributes name, belt_level, position (e.g., guard, mount), and difficulty.
+# Create a BJJLog class that allows practitioners to add techniques learned, track progress on each, and filter techniques by position or difficulty.
+# Implement a method to display all logged techniques and group them by the belt level for easy review.
+
+#Techniques learned at classes
+class Technique():
+    def __init__(self, date, position, technique):
+        self.date = date
+        self.position = position
+        self.technique = technique
+
+#log of techniques from class
+class BJJTechniques():
+    def __init__(self):
+        self.log = []
+
+#create other methods (escapes, back, guard, passing, submissions, etc.)
+
+
+
+    #add technique to your training log
+    def add_technique(self, session):
+        self.log.append(session)
+        print(f'{session.date}, {session.position}, {session.technique}\nThe above has been added to you training log ')
+
+    #remove technique from your training log
+    def remove_technique(self, session):
+        self.log.remove(session)
+        print((f'{session.date}, {session.position}, {session.technique}\nThe above has been removed from your training log '))
+
+#class to track bjj ranking (i.e. stripes, promotions, etc.)
+class BJJRank():
+    def __init__(self):
+        self.rank = []
+
+    #add stripe to white belt
+    def white_belt(self, stripe):
+        self.rank.append(stripe)
+        
+    #add stripe to blue belt
+    def blue_belt():
+        pass
+
+    #add stripe to purple belt
+    def purple_belt():
+        pass
+    
+    #add striple to brown belt
+    def brown_belt():
+        pass
+    
+    #add striple to black belt
+    def black_belt():
+        pass
+
+#Feedback from what coaches give you
+class Coach_feedback():
+    pass
+
+#Injuries suffered throughout bjj (include injury, time off mat, what you did to stay in shape (if possible/when possible))
+class Injuries():
+    pass
+
+#Track your sparring sessions with your partner (include sparring partner, legnth of round, comp/no comp roll, gi/no gi, notes)
+class Sparring_Notes():
+
+
+
+technique1 = Technique('9/1/2024','closed guard', 'closed guard sweep')
+log = BJJTechniques()
+log.add_technique(technique1)
+log.remove_technique(technique1)
+        
+
