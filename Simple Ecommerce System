@@ -1,0 +1,32 @@
+# Simple E-commerce System: Create a Product class and a Cart class. 
+# Product should have name, price, and stock_quantity. 
+# The Cart should allow adding products, removing them, and calculating the total price of items in the cart.
+
+class Product():
+    def __init__(self,name, price, stock_quantity):
+        self.name = name
+        self.price = price
+        self.stock_quantity = stock_quantity
+
+class Cart():
+    def __init__(self):
+        self.shopping_cart = []
+
+    def add_product(self, item):
+        if item in self.shopping_cart:
+            print('This item is already in your cart')
+        else:
+            self.shopping_cart.append(item)
+            print(f'{item.name} has been added to your shopping cart. The total cost of your shopping cart is ${item.price}')
+    
+
+    def remove_item(self, item):
+        if item not in self.shopping_cart:
+            print('This item cannot be removed, it is not in your shopping cart')
+        else:
+            self.shopping_cart.remove(item)
+            print(f'{item.name} has been removed from your shopping cart')
+
+    def cart_total(self):
+        cart_price = sum(item.price for item in self.shopping_cart)
+        print(f'The total price of your shopping cart is ${cart_price}')
