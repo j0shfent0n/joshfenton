@@ -1,0 +1,53 @@
+# Music Playlist: Create a Song class with attributes like title, artist, and duration. Then create a Playlist class that allows:
+
+# Adding a song to the playlist.
+# Removing a song by title.
+# Displaying all songs in the playlist.
+# Calculating the total duration of the playlist.
+
+class Song():
+    def __init__(self, song, artist, duration):
+        self.song = song
+        self.artist = artist
+        self.duration = duration
+
+class Playlist():
+    def __init__(self):
+        self.spotify = []
+
+    def add_song(self, song):
+        if song in self.spotify:
+            print(f'{song.song} by {song.artist} has already been added to your playlist')
+        else:
+            self.spotify.append(song)
+            print(f'{song.song} by {song.artist} has been added to your playlist')
+
+    def remove_song(self, song):
+        if song not in self.spotify:
+            print(f'{song.song} by {song.artist} is not in your playlist, therefore it cannot be removed ')
+        else:
+            self.spotify.remove(song)
+            print(f'{song.song} by {song.artist} has been removed from your playlist')
+
+    def display_songs(self):
+        if not self.spotify:
+                print('There are no songs in your playlist, please try adding a song ')
+        else:
+            for song in self.spotify:
+                print(f'Song: {song.song} Artist: {song.artist}, Duration: {song.duration} minutes')
+        return self.spotify
+
+    def playlist_duration(self):
+        music_time = sum(song.duration for song in self.spotify)
+        if music_time not in self.spotify:
+            print('There are no songs in your list, let\'s add some' )
+        else:
+            print(f'Your playlist is {music_time} minutes long')
+
+
+song1 = Song('Life got crazy', 'Mike', 3)
+song2 = Song('Bar Hopping', 'Mike', 4)
+Josh_Playlist = Playlist()
+Josh_Playlist.add_song(song1)
+Josh_Playlist.add_song(song2)
+Josh_Playlist.display_songs()
