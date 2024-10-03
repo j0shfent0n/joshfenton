@@ -9,23 +9,108 @@ class Technique():
         self.position = position
         self.technique = technique
 
+    def __str__(self):
+        return f'Current log: {self.date}, {self.position}, {self.technique}' 
+    
 #log of techniques from class
 class BJJTechniques():
     def __init__(self):
         self.log = []
-        self.back_technique = []
+        self.back_attack = []
+        self.back_escape = []
+        self.guard = []
+        self.submission = []
+        self.guardpass = []
+        self.side_control_escape = []
+        self.turtle =[]
+        self.takedowns = []
+
+    def __repr__(self):
+        return f'Current log: {self.date}, {self.position}, {self.technique}' 
+
 
 #create other methods - add other sections (escapes, back, guard, passing, submissions, etc.)
-    
-    #add to back attack section
-    def back_attack(self, session_log):
-        self.log.append(session_log)
-        print(f'Date: {session_log.date}, Technique: {session_log.technique} has been added to your log ')
-        #print(self.log)
-    
-    #add to gurad play
 
-    #add to guard retention
+       #add technique to your training log
+    def add_technique(self, session):
+        self.log.append(session)
+        #Confirm the session has been added to trainng log
+        print(f'{session.date}, {session.position}, {session.technique}\nThe above has been added to you training log ')
+
+    #remove technique from your training log
+    def remove_technique(self, session):
+        self.log.remove(session)
+        #confirm the session has been removed from the training log
+        print((f'{session.date}, {session.position}, {session.technique}\nThe above has been removed from your training log '))
+
+    
+    #add session to back attack section
+    def add_back_attack(self, session):
+        self.log.append(session)
+        self.back_attack.append(session)
+
+        #print the date and the technique that has been added to back attack training log
+        print(f'Date: {session.date}, Technique: {session.technique} has been added to your back log ')
+
+        #print sessions that have been logged in the training log
+        print(f'Your complete training log contains the following sessions: ')
+        for session in self.log:
+            print(f'{session.date}, {session.technique}')
+
+        #print back technique training log
+        print(f'Your back attck training log consists of the following: ')    
+        for session in self.back_attack:
+            print(f'{session.date}, {session.technique}')
+
+    def add_back_escape(self,session):
+        self.log.append(session)
+        self.back_escape.append(session)
+
+        #print the date and the technique that have been added to back escape training log
+        print(f'{session.technique} has been added to your back escape log')
+
+        #print back escapes log
+        print('Your back escape log consists of the following escapes: ')
+        for session in self.back_escape:
+            print(f'{session.date}, {session.technique}')
+
+       
+    #add to guard play
+    def add_guard(self,session):
+        self.log.append(session)
+        self.guard.append(session)
+        #confirm the entry has been added to the log
+        print(f'Date: {session.date}, Technique: {session.technique} has been added to your guard log ')
+
+        #print guard log
+        print('Your guard log consists of the following entries: ')
+        for session in self.guard:
+            print(f'Date: {session.date}, Technique: {session.technique}')
+
+        #print all entries
+        print('Your training log consists of these entries: ')
+        for session in self.log:
+            print(f'Date: {session.date}, Technique: {session.technique}')
+
+
+    #add guard pass
+    def add_guard_pass(self, guard_pass):
+        self.log.append(guard_pass)
+        self.guardpass.append(guard_pass)
+
+        #Confirm gurad pass was added to guard pass log
+        print(f'{guard_pass.technique} was added to your guard pass log ')
+
+        #print guard pass log
+        print('Your guard pass log has the following passes: ')
+        for guard_pass in self.guardpass:
+            print(f'Date: {guard_pass.date}, Technique: {guard_pass.technique}')
+
+        #print entire entry log
+        print('Your training log consists of the following entries: ')
+        for guard_pass in self.log:
+            print(f'{guard_pass.date}, {guard_pass.technique}')
+
 
     #add to mount
 
@@ -40,16 +125,6 @@ class BJJTechniques():
     #add to takedowns
 
     #add submission
-
-    #add technique to your training log
-    def add_technique(self, session):
-        self.log.append(session)
-        print(f'{session.date}, {session.position}, {session.technique}\nThe above has been added to you training log ')
-
-    #remove technique from your training log
-    def remove_technique(self, session):
-        self.log.remove(session)
-        print((f'{session.date}, {session.position}, {session.technique}\nThe above has been removed from your training log '))
 
 #class to track bjj ranking (i.e. stripes, promotions, etc.)
 class BJJRank():
@@ -89,7 +164,14 @@ class Sparring_Notes():
     pass
 
 technique1 = Technique('9/1/2024','closed guard', 'closed guard sweep')
+technique2 = Technique('9/3/2024', 'back attack', 'rear naked choke')
+technique3 = Technique('9/5/2024', 'back escape', 'knee to elbow escape')
+technique4= Technique('9/7/2024', 'guard retention', 'closed guard retention')
+technique5 = Technique('9/9/2024', 'guard pass', 'knee cut')
 log = BJJTechniques()
 log.add_technique(technique1)
-log.remove_technique(technique1)
-log.back_attack(technique1)
+#log.remove_technique(technique1)
+log.add_back_attack(technique2)
+log.add_back_escape(technique3)
+log.add_guard(technique4)
+log.add_guard_pass(technique5)
