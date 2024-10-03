@@ -13,9 +13,14 @@ class Technique():
 class BJJTechniques():
     def __init__(self):
         self.log = []
+        self.back_technique = []
 
-#create other methods (escapes, back, guard, passing, submissions, etc.)
-
+#create other methods - add other sections (escapes, back, guard, passing, submissions, etc.)
+    #add to back attack section
+    def back_attack(self, session_log):
+        self.log.append(session_log)
+        print(f'Date: {session_log.date}, Technique: {session_log.technique} has been added to your log ')
+        #print(self.log)
 
 
     #add technique to your training log
@@ -63,12 +68,11 @@ class Injuries():
 
 #Track your sparring sessions with your partner (include sparring partner, legnth of round, comp/no comp roll, gi/no gi, notes)
 class Sparring_Notes():
-
-
+    pass
 
 technique1 = Technique('9/1/2024','closed guard', 'closed guard sweep')
 log = BJJTechniques()
 log.add_technique(technique1)
 log.remove_technique(technique1)
-        
+log.back_attack(technique1)
 
