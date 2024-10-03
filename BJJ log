@@ -16,12 +16,30 @@ class BJJTechniques():
         self.back_technique = []
 
 #create other methods - add other sections (escapes, back, guard, passing, submissions, etc.)
+    
     #add to back attack section
     def back_attack(self, session_log):
         self.log.append(session_log)
         print(f'Date: {session_log.date}, Technique: {session_log.technique} has been added to your log ')
         #print(self.log)
+    
+    #add to gurad play
 
+    #add to guard retention
+
+    #add to mount
+
+    #add to guard pass
+
+    #add to side control
+
+    #add to back control
+
+    #add to turtle
+
+    #add to takedowns
+
+    #add submission
 
     #add technique to your training log
     def add_technique(self, session):
@@ -75,4 +93,3 @@ log = BJJTechniques()
 log.add_technique(technique1)
 log.remove_technique(technique1)
 log.back_attack(technique1)
-
