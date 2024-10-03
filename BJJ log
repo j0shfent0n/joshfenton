@@ -24,6 +24,8 @@ class BJJTechniques():
         self.side_control_escape = []
         self.turtle =[]
         self.takedowns = []
+        self.mount =[]
+        self.mount_escape = []
 
     def __repr__(self):
         return f'Current log: {self.date}, {self.position}, {self.technique}' 
@@ -113,9 +115,43 @@ class BJJTechniques():
 
 
     #add to mount
+    def add_mount(self, mount):
+        self.log.append(mount)
+        self.mount.append(mount)
 
-    #add to guard pass
+    #mount attack was added to mount log
+        print(f'{mount.technique} was added to your top mount log ')
 
+    #print mount attack log
+        print('Your mount attacks have the following techniques: ')
+        for mount in self.mount:
+            print(f'Date: {mount.date}, Technique: {mount.technique} ')
+
+    #print entire training log
+        print('Your training log consists of the following entries: ')
+        for mount in self.log:
+            print(f'{mount.date}, {mount.technique}')
+
+
+    #add mount escape
+    def add_mount_escape(self, escape):
+        self.log.append(escape)
+        self.mount_escape.append(escape)
+
+        #print mount escape was added to mount escape log
+        print(f'{escape.technique} has been added to your mount escapes ')
+
+        #print mount escape log
+        print('Your mount escapes include the following techniques: ')
+        for escape in self.mount_escape:
+            print(f'Date: {escape.date}, Technique: {escape.technique}')
+
+        #print complete training log
+        print('Your training log consists of the following techniques: ')
+        for escape in self.log:
+            print(f'Date: {escape.date}, Technique: {escape.technique}')
+
+     
     #add to side control
 
     #add to back control
@@ -123,6 +159,22 @@ class BJJTechniques():
     #add to turtle
 
     #add to takedowns
+    def add_takedown(self,takedown):
+        self.log.append(takedown)
+        self.takedowns.append(takedown)
+
+        #Confirm takedown has been added to takedown training log
+        print(f'{takedown.technique} has been added to your training log ')
+
+        #print entire takedown log
+        print('Your takedown log consist of the following takedowns: ')
+        for takedown in self.takedowns:
+            print(f'Date: {takedown.date}, Technique: {takedown.technique}')
+
+        #print entire training log
+        print('Your training log consists of the following entries: ')
+        for takedown in self.log:
+            print(f'Date: {takedown.date}, Technique: {takedown.technique}')
 
     #add submission
 
@@ -168,10 +220,19 @@ technique2 = Technique('9/3/2024', 'back attack', 'rear naked choke')
 technique3 = Technique('9/5/2024', 'back escape', 'knee to elbow escape')
 technique4= Technique('9/7/2024', 'guard retention', 'closed guard retention')
 technique5 = Technique('9/9/2024', 'guard pass', 'knee cut')
+technique6 = Technique('9/9/2024', 'mount', 'arm triangle')
+technique7 = Technique('9/10/2024', 'mount escape', 'bridge')
+technique8 = Technique('9/11/2024', 'takedown', 'single leg')
+
+
 log = BJJTechniques()
+
 log.add_technique(technique1)
 #log.remove_technique(technique1)
 log.add_back_attack(technique2)
 log.add_back_escape(technique3)
 log.add_guard(technique4)
 log.add_guard_pass(technique5)
+log.add_mount(technique6)
+log.add_mount_escape(technique7)
+log.add_takedown(technique8)
