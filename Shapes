@@ -1,0 +1,39 @@
+# Problem 3: Shapes and Inheritance
+# Create a base class called Shape, which will be inherited by classes Rectangle and Circle.
+
+# Shape Class:
+# Attributes: color.
+# Methods:
+# describe(): prints the shape type and its color.
+# Rectangle Class (inherits from Shape):
+# Attributes: length, width.
+# Methods:
+# area(): calculates and returns the area of the rectangle.
+# Circle Class (inherits from Shape):
+# Attributes: radius.
+# Methods:
+# area(): calculates and returns the area of the circle (use π*r^2).
+# Create instances of Rectangle and Circle, set their colors, and calculate their areas.
+
+
+
+
+
+
+
+
+
+class Shape():
+    def __init__(self, color):
+        self.color = color
+
+
+
+class Rectangle(Shape):
+    def __init__(self, length, width):
+        self.length = length
+        self.width = width
+
+class Circle(Shape):
+    def __init__(self, radius):
+        self.radius = radius
