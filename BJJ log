@@ -21,8 +21,10 @@ class BJJTechniques():
         self.guard = []
         self.submission = []
         self.guardpass = []
-        self.side_control_escape = []
-        self.turtle =[]
+        self.sidecontrol_escape = []
+        self.sidecontrol_attack = []
+        self.turtle_attack = []
+        self.turtle_esc = []
         self.takedowns = []
         self.mount =[]
         self.mount_escape = []
@@ -152,11 +154,75 @@ class BJJTechniques():
             print(f'Date: {escape.date}, Technique: {escape.technique}')
 
      
-    #add to side control
+    #add to side control attack
+    def side_control_attack(self, attack):
+        self.log.append(attack)
+        self.sidecontrol_attack.append(attack)
 
-    #add to back control
+        #print your side control attack has been added to your side control log
+        print(f'{attack.technique} has been added to your side control attack log ')
 
-    #add to turtle
+        #print entire side control attack log
+        print('Your side control attack log contains the following attacks: ')
+        for attack in self.sidecontrol_attack:
+            print(f'Date: {attack.date} Technique: {attack.technique}')
+
+        #print entire training log
+
+        print('Your training log has the following techniques: ')
+        for attack in self.log:
+            print(f'Date: {attack.date} Technique: {attack.technique}')
+
+    def side_control_escape(self, escape):
+        self.log.append(escape)
+        self.sidecontrol_escape.append(escape)
+        print(f'{escape.technique} has been added to your mount escapes ')
+
+        #print side control escape log
+        print('Your mount escapes include the following techniques: ')
+        for escape in self.mount_escape:
+            print(f'Date: {escape.date}, Technique: {escape.technique}')
+
+        #print complete training log
+        print('Your training log consists of the following techniques: ')
+        for escape in self.log:
+            print(f'Date: {escape.date}, Technique: {escape.technique}')
+       
+
+     #add to turtle attack
+    def side_control_attack(self, attack):
+        self.log.append(attack)
+        self.turtle_attack.append(attack)
+
+        #print your side control attack has been added to your side control log
+        print(f'{attack.technique} has been added to your turtle attack log ')
+
+        #print entire turtle attack log
+        print('Your turtle attack log contains the following attacks: ')
+        for attack in self.sidecontrol_attack:
+            print(f'Date: {attack.date} Technique: {attack.technique}')
+
+        #print entire training log
+
+        print('Your training log has the following techniques: ')
+        for attack in self.log:
+            print(f'Date: {attack.date} Technique: {attack.technique}')
+
+    def turtle_escape(self, escape):
+        self.log.append(escape)
+        self.turtle_esc.append(escape)
+        print(f'{escape.technique} has been added to your turtle escapes ')
+
+        #print turtle escape log
+        print('Your turtle escapes include the following techniques: ')
+        for escape in self.mount_escape:
+            print(f'Date: {escape.date}, Technique: {escape.technique}')
+
+        #print complete training log
+        print('Your training log consists of the following techniques: ')
+        for escape in self.log:
+            print(f'Date: {escape.date}, Technique: {escape.technique}')
+
 
     #add to takedowns
     def add_takedown(self,takedown):
@@ -176,31 +242,128 @@ class BJJTechniques():
         for takedown in self.log:
             print(f'Date: {takedown.date}, Technique: {takedown.technique}')
 
-    #add submission
+    
 
 #class to track bjj ranking (i.e. stripes, promotions, etc.)
 class BJJRank():
     def __init__(self):
-        self.rank = []
+        self.white = []
+        self.blue = []
+        self.purple = []
+        self.brown = []
+        self.black = []
 
     #add stripe to white belt
-    def white_belt(self, stripe):
-        self.rank.append(stripe)
+    def white_belt(self):
+        # ask user how many stripes they have
+        stripe = int(input('How many stripes did you get? '))
+
+        #congragulate user on stripes
+        if stripe == 1:
+            print(f'Congrats on getting {stripe} stripe! ')
+        elif stripe > 1 and stripe < 4:
+            print(f'Congrats on getting {stripe} stripes! ')
+        else: 
+            print('Please enter a valid number ')
+
+        #add stripes to self.white
+        self.white.append(stripe)
+        
+        #users total number of stripes
+        total_stripes = sum(self.white)
+        print(f'You have a total of {total_stripes} on your white belt! ')
+
+        #how many more stripes until promotion
+        if total_stripes >= 4:
+            print('You have 4 stripes, it\s time to rank up! ')
+        else: 
+            print(f'Keep going! Only {4-total_stripes} stripes until you get promoted! ')
+
+
         
     #add stripe to blue belt
-    def blue_belt():
-        pass
+    def blue_belt(self):
+
+        # ask user how many stripes they have
+        stripe = int(input('How many stripes did you get? '))
+
+        #congragulate user on stripes
+        if stripe == 1:
+            print(f'Congrats on getting {stripe} stripe! ')
+        elif stripe > 1 and stripe < 4:
+            print(f'Congrats on getting {stripe} stripes! ')
+        else: 
+            print('Please enter a valid number ')
+
+        #add stripes to self.blue
+        self.blue.append(stripe)
+        
+        #users total number of stripes
+        total_stripes = sum(self.blue)
+        print(f'You have a total of {total_stripes} on your blue belt! ')
+
+        #how many more stripes until promotion
+        if total_stripes >= 4:
+            print('You have 4 stripes, it\s time to rank up! ')
+        else: 
+            print(f'Keep going! Only {4-total_stripes} stripes until you get promoted! ')
 
     #add stripe to purple belt
-    def purple_belt():
-        pass
+    def purple_belt(self):
+        # ask user how many stripes they have
+        stripe = int(input('How many stripes did you get? '))
+
+        #congragulate user on stripes
+        if stripe == 1:
+            print(f'Congrats on getting {stripe} stripe! ')
+        elif stripe > 1 and stripe < 4:
+            print(f'Congrats on getting {stripe} stripes! ')
+        else: 
+            print('Please enter a valid number ')
+
+        #add stripes to self.blue
+        self.purple.append(stripe)
+        
+        #users total number of stripes
+        total_stripes = sum(self.purple)
+        print(f'You have a total of {total_stripes} on your purple belt! ')
+
+        #how many more stripes until promotion
+        if total_stripes >= 4:
+            print('You have 4 stripes, it\s time to rank up! ')
+        else: 
+            print(f'Keep going! Only {4-total_stripes} stripes until you get promoted! ')
+
     
     #add striple to brown belt
-    def brown_belt():
-        pass
+    def brown_belt(self):
+        # ask user how many stripes they have
+        stripe = int(input('How many stripes did you get? '))
+
+        #congragulate user on stripes
+        if stripe == 1:
+            print(f'Congrats on getting {stripe} stripe! ')
+        elif stripe > 1 and stripe < 4:
+            print(f'Congrats on getting {stripe} stripes! ')
+        else: 
+            print('Please enter a valid number ')
+
+        #add stripes to self.blue
+        self.brown.append(stripe)
+        
+        #users total number of stripes
+        total_stripes = sum(self.brown)
+        print(f'You have a total of {total_stripes} on your brown belt! ')
+
+        #how many more stripes until promotion
+        if total_stripes >= 4:
+            print('You have 4 stripes, it\s time to rank up! ')
+        else: 
+            print(f'Keep going! Only {4-total_stripes} stripes until you get promoted! ')
+
     
     #add striple to black belt
-    def black_belt():
+    def black_belt(self):
         pass
 
 #Feedback from what coaches give you
@@ -236,3 +399,10 @@ log.add_guard_pass(technique5)
 log.add_mount(technique6)
 log.add_mount_escape(technique7)
 log.add_takedown(technique8)
+
+belt = BJJRank()
+belt.white_belt()
+
+#add another class for training log that tracks submission, time rolled, notes vs each opponent
+#add another class that provides recommended techniques
+#the app needs to make people want to continue using the app, people need to stay on the app
