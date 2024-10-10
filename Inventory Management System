@@ -1,0 +1,63 @@
+#class that manages inventory
+class Inventory():
+    def __init__(self):
+        self.inventory = []
+    
+    #add product to inventory
+    def add_product(self, product):
+        if product not in self.inventory:
+            self.inventory.append(product)
+            print(f'{product.name} has been added to your inventory ')
+        else:
+            print(f'{product} is already in your inventory ')
+        
+    #find product that is currently in the inventory
+    def find_product(self, product_name):
+        product_name = product_name.lower()
+
+        for product in self.inventory:
+            if product_name == product.name:
+                 print(f'We have {product.quantity} units {product.name} in stock ')
+            else:
+                print(f'We do not have {product_name} in our inventory')
+
+    #list all products in inventory
+    def list_products(self):
+        for product in self.inventory:
+            print(f'Name: {product.name} Price: {product.price} Quantity: {product.quantity}')
+        if product not in self.inventory:
+            print('We do not have any inventory at this time')
+
+        
+#class that creates products
+class Product():
+    def __init__(self, name, price, quantity):
+        self.name = name
+        self.price = price
+        self.quantity = quantity
+
+    #add stock to the product's quantity
+    def add_stock(self, quantity):
+            self.quantity += quantity
+            print(f'You now have a total of {self.quantity} of {self.name} ')   
+
+    #removes stock from the products quantity
+    def remove_stock(self, quantity):
+        self.quantity-=quantity
+        print(f'The quantity of {self.name} has been reduced by {quantity}. There are now a total of {self.quantity} units remaining ')
+
+    #displays the products name, price, quantity
+    def display_product(self):
+        print(f'{self.name}, {self.price}, {self.quantity} ')
+
+product1 = Product('toys', 35, 50)
+product2 = Product('wheels', 10, 15)
+
+inventory = Inventory()
+inventory.add_product(product1)
+inventory.add_product(product2)
+product1.add_stock(10)
+inventory.find_product('toys')
+inventory.list_products()
+product1.remove_stock(15)
+product1.display_product()
