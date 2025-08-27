@@ -1,0 +1,518 @@
+"""
+NFL 2025 Insights — v2 (bullet‑proof)
+
+Key improvements vs v1:
+- Scalar‑safe helpers (num, safe_div, zscore) so we never crash on ints/floats.
+- Much broader column auto‑detection (names, games, stats).
+- Builds player_name from first/last or display_name if needed.
+- Safe "gp" construction (always a Series).
+- Excel writer gracefully falls back to openpyxl if XlsxWriter isn't installed.
+- Cleaner error messages.
+
+Run (demo):
+    python nfl_2025_insights_v2.py --demo --out ./nfl_2025_demo.xlsx
+
+Run (real files):
+    python nfl_2025_insights_v2.py \
+      --yearly_player_off yearly_player_stats_offense.csv \
+      --weekly_player_off weekly_player_stats_offense.csv \
+      --yearly_team_off   yearly_team_stats_offense.csv \
+      --weekly_team_off   weekly_team_stats_offense.csv \
+      --out nfl_2025_insights.xlsx
+"""
+
+import argparse
+import pandas as pd
+import numpy as np
+from typing import Optional, List
+
+last_season = 2024
+prev_season = 2023
+
+# ---------------------- Helpers (scalar‑safe) ----------------------
+
+def num(x):
+    """Convert to numeric; handle scalars and pandas objects safely."""
+    if isinstance(x, (int, float, np.integer, np.floating)):
+        return float(x)
+    s = pd.to_numeric(x, errors="coerce")
+    return s.fillna(0) if hasattr(s, "fillna") else s
+
+def _to_series_like(x, index):
+    """Ensure we have a pandas Series aligned to index."""
+    if isinstance(x, (int, float, np.integer, np.floating)):
+        return pd.Series(float(x), index=index)
+    if isinstance(x, pd.Series):
+        return x
+    try:
+        return pd.Series(x, index=index)
+    except Exception:
+        return pd.Series(np.nan, index=index)
+
+def safe_div(n, d):
+    """Safe division for scalars and pandas; no crashes on zero/NaN."""
+    # Convert both sides
+    if isinstance(n, (int, float, np.integer, np.floating)) and isinstance(d, (int, float, np.integer, np.floating)):
+        return n / d if d not in (0, 0.0) else 0.0
+    # At least one is pandas-like
+    n_s = _to_series_like(n, getattr(d, "index", getattr(n, "index", None)))
+    d_s = _to_series_like(d, getattr(n_s, "index", None))
+    d_s = d_s.replace(0, np.nan)
+    out = n_s / d_s
+    return out.fillna(0)
+
+def zscore(x):
+    """z-score on Series; returns zeros for degenerate cases. Scalar returns 0.0"""
+    if isinstance(x, (int, float, np.integer, np.floating)):
+        return 0.0
+    s = pd.to_numeric(x, errors="coerce")
+    mu = s.mean(skipna=True)
+    sd = s.std(skipna=True)
+    if pd.isna(sd) or sd == 0:
+        return pd.Series(0.0, index=s.index)
+    return (s - mu) / sd
+
+def first_present(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+def smart_read_csv(path: Optional[str]) -> Optional[pd.DataFrame]:
+    if not path:
+        return None
+    try:
+        df = pd.read_csv(path)
+        df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+        return df
+    except Exception:
+        return None
+
+# ---------------------- Demo data ----------------------
+
+def build_demo_data():
+    rng = np.random.default_rng(7)
+    players = [
+        ("Patrick Mahomes","QB","KAN",1995),
+        ("Josh Allen","QB","BUF",1996),
+        ("Breece Hall","RB","NYJ",2001),
+        ("Bijan Robinson","RB","ATL",2002),
+        ("CeeDee Lamb","WR","DAL",1999),
+        ("Amon-Ra St. Brown","WR","DET",1999),
+        ("Sam LaPorta","TE","DET",2001),
+        ("Trey McBride","TE","ARI",1999),
+    ]
+    rows_2023, rows_2024 = [], []
+    for name,pos,team,by in players:
+        rows_2023.append({
+            "player_name": name, "position": pos, "team": team, "season": 2023, "games": 16, "birth_year": by,
+            "pass_yds": int(rng.normal(4300 if pos=="QB" else 0, 250)),
+            "pass_td":  int(rng.normal(30 if pos=="QB" else 0, 4)),
+            "int":      int(rng.normal(12 if pos=="QB" else 0, 2)),
+            "pass_att": int(rng.normal(560 if pos=="QB" else 0, 35)),
+            "rush_att": int(rng.normal(55 if pos=="QB" else (240 if pos=="RB" else 10), 18)),
+            "rush_yds": int(rng.normal(450 if pos=="QB" else (1100 if pos=="RB" else 50), 120)),
+            "rush_td":  int(rng.normal(3 if pos=="QB" else (10 if pos=="RB" else 1), 2)),
+            "tgt":      int(rng.normal(0 if pos=="RB" else (150 if pos in ("WR","TE") else 0), 12)),
+            "rec":      int(rng.normal(0 if pos=="RB" else (95 if pos in ("WR","TE") else 0), 10)),
+            "rec_yds":  int(rng.normal(0 if pos=="RB" else (1250 if pos=="WR" else 900 if pos=="TE" else 0), 150)),
+            "rec_td":   int(rng.normal(0 if pos=="RB" else (10 if pos=="WR" else 7 if pos=="TE" else 0), 2)),
+        })
+        bump = 1.08 if name in ("Breece Hall","Bijan Robinson","Trey McBride","Sam LaPorta") else 1.02
+        rows_2024.append({
+            "player_name": name, "position": pos, "team": team, "season": 2024, "games": 17, "birth_year": by,
+            "pass_yds": int(bump * rows_2023[-1]["pass_yds"]),
+            "pass_td":  int(bump * rows_2023[-1]["pass_td"]),
+            "int":      int(rows_2023[-1]["int"] * (0.95 if pos=="QB" else 1.0)),
+            "pass_att": int(bump * rows_2023[-1]["pass_att"]),
+            "rush_att": int(bump * rows_2023[-1]["rush_att"]),
+            "rush_yds": int(bump * rows_2023[-1]["rush_yds"]),
+            "rush_td":  int(bump * rows_2023[-1]["rush_td"]),
+            "tgt":      int(bump * rows_2023[-1]["tgt"]),
+            "rec":      int(bump * rows_2023[-1]["rec"]),
+            "rec_yds":  int(bump * rows_2023[-1]["rec_yds"]),
+            "rec_td":   int(bump * rows_2023[-1]["rec_td"]),
+        })
+    yp = pd.DataFrame(rows_2023 + rows_2024)
+
+    # weekly
+    weeks = list(range(1,18))
+    wrows = []
+    for _,r in yp[yp["season"]==2024].iterrows():
+        for wk in weeks:
+            scale = np.random.uniform(0.8, 1.2)
+            wrows.append({
+                "player_name": r["player_name"], "position": r["position"], "team": r["team"],
+                "season": r["season"], "week": wk,
+                "pass_yds": int(scale * r["pass_yds"]/17),
+                "pass_td":  int(scale * r["pass_td"]/17 + (np.random.rand()<0.25)),
+                "int":      int(scale * r["int"]/17 + (np.random.rand()<0.1)),
+                "rush_yds": int(scale * r["rush_yds"]/17),
+                "rush_td":  int(scale * r["rush_td"]/17 + (np.random.rand()<0.2)),
+                "rec":      int(scale * r["rec"]/17),
+                "rec_yds":  int(scale * r["rec_yds"]/17),
+                "rec_td":   int(scale * r["rec_td"]/17 + (np.random.rand()<0.2)),
+                "tgt":      int(scale * r["tgt"]/17),
+                "rush_att": int(scale * (r["rush_att"]/17 if r["rush_att"] else 0)),
+            })
+    wp = pd.DataFrame(wrows)
+    return yp, wp, None, None
+
+# ---------------------- Core compute ----------------------
+
+def compute(yp, wp=None, yt=None, wt=None, out_path="nfl_2025_insights.xlsx"):
+    # --- Column detection (broad) ---
+    name_candidates = [
+        "player_name","name","full_name","player","player_display_name",
+        "display_name","gsis_name","pfr_player_name"
+    ]
+    first_candidates = ["first_name","firstname","player_first_name","first"]
+    last_candidates  = ["last_name","lastname","player_last_name","last"]
+
+    pos_candidates = ["position","pos"]
+    team_candidates = ["team","team_abbr","team_code","club"]
+    season_candidates = ["season","year"]
+    games_candidates = ["games","g","gp","games_played","game_count","games_g"]
+
+    pass_yds_c = ["pass_yds","passing_yards","pass_yards","yds_pass"]
+    pass_td_c  = ["pass_td","pass_tds","passing_tds","td_pass"]
+    int_c      = ["int","ints","interceptions"]
+    pass_att_c = ["pass_att","passing_att","att_pass"]
+
+    rush_att_c = ["rush_att","rushing_att","att_rush"]
+    rush_yds_c = ["rush_yds","rushing_yards","yds_rush"]
+    rush_td_c  = ["rush_td","rushing_tds","td_rush"]
+
+    tgt_c      = ["tgt","targets","tar"]
+    rec_c      = ["rec","receptions","recs"]
+    rec_yds_c  = ["rec_yds","receiving_yards","yds_rec"]
+    rec_td_c   = ["rec_td","receiving_tds","td_rec"]
+
+    byear_candidates = ["birth_year","byear"]
+
+    # normalize columns
+    yp.columns = [c.strip().lower().replace(" ", "_") for c in yp.columns]
+    if wp is not None:
+        wp.columns = [c.strip().lower().replace(" ", "_") for c in wp.columns]
+
+    col_player_name = first_present(yp, name_candidates)
+    if not col_player_name:
+        f = first_present(yp, first_candidates)
+        l = first_present(yp, last_candidates)
+        if f and l:
+            yp["player_name"] = yp[f].astype(str).str.strip() + " " + yp[l].astype(str).str.strip()
+            col_player_name = "player_name"
+        else:
+            raise RuntimeError("Could not determine player_name column. Please supply a name column.")
+
+    col_pos    = first_present(yp, pos_candidates) or "position"
+    col_team   = first_present(yp, team_candidates) or "team"
+    col_season = first_present(yp, season_candidates) or "season"
+    col_games  = first_present(yp, games_candidates)
+
+    col_pass_yds = first_present(yp, pass_yds_c) or "pass_yds"
+    col_pass_td  = first_present(yp, pass_td_c)  or "pass_td"
+    col_int      = first_present(yp, int_c)      or "int"
+    col_pass_att = first_present(yp, pass_att_c) or "pass_att"
+
+    col_rush_att = first_present(yp, rush_att_c) or "rush_att"
+    col_rush_yds = first_present(yp, rush_yds_c) or "rush_yds"
+    col_rush_td  = first_present(yp, rush_td_c)  or "rush_td"
+
+    col_tgt      = first_present(yp, tgt_c)      or "tgt"
+    col_rec      = first_present(yp, rec_c)      or "rec"
+    col_rec_yds  = first_present(yp, rec_yds_c)  or "rec_yds"
+    col_rec_td   = first_present(yp, rec_td_c)   or "rec_td"
+
+    col_birth_year = first_present(yp, byear_candidates)
+
+    # --- Subset seasons ---
+    yp24 = yp[yp[col_season] == last_season].copy()
+    yp23 = yp[yp[col_season] == prev_season].copy() if col_season in yp.columns else pd.DataFrame(columns=yp.columns)
+
+    # --- Derived features ---
+    yp24["age_2025"] = (2025 - num(yp24[col_birth_year])).astype(float) if col_birth_year in yp24.columns else np.nan
+
+    yp24["ypa"] = safe_div(yp24.get(col_pass_yds, 0), yp24.get(col_pass_att, 0))
+    yp24["ypc"] = safe_div(yp24.get(col_rush_yds, 0), yp24.get(col_rush_att, 0))
+    yp24["yptarget"] = safe_div(yp24.get(col_rec_yds, 0), yp24.get(col_tgt, 0))
+    yp24["ypr"] = safe_div(yp24.get(col_rec_yds, 0), yp24.get(col_rec, 0))
+
+    yp24["opportunities"] = num(yp24.get(col_rush_att, 0)) + num(yp24.get(col_tgt, 0))
+
+    yp24["fantasy_ppr"] = (
+        num(yp24.get(col_pass_yds, 0))/25.0
+        + num(yp24.get(col_pass_td, 0))*4.0
+        - num(yp24.get(col_int, 0))*2.0
+        + num(yp24.get(col_rush_yds, 0))/10.0
+        + num(yp24.get(col_rush_td, 0))*6.0
+        + num(yp24.get(col_rec, 0))*1.0
+        + num(yp24.get(col_rec_yds, 0))/10.0
+        + num(yp24.get(col_rec_td, 0))*6.0
+    )
+
+    # gp as a Series
+    if col_games and col_games in yp24.columns:
+        gp_raw = pd.to_numeric(yp24[col_games], errors="coerce")
+    else:
+        gp_raw = pd.Series(np.nan, index=yp24.index)
+    yp24["gp"] = gp_raw.replace(0, np.nan)
+
+    yp24["ppr_per_game"] = (yp24["fantasy_ppr"] / yp24["gp"]).fillna(0)
+
+    # Year‑over‑year deltas by name
+    key = [col_player_name]
+    def yoy(from_df, to_df, val_col):
+        try:
+            a = from_df[key + [val_col]].copy()
+            b = to_df[key + [val_col]].copy()
+            a = a.rename(columns={val_col: f"{val_col}_prev"})
+            m = b.merge(a, on=key, how="left")
+            return num(m[val_col]) - num(m[f"{val_col}_prev"])
+        except Exception:
+            return pd.Series(0.0, index=to_df.index)
+
+    yp24["delta_targets"] = yoy(yp23, yp24, col_tgt if col_tgt in yp.columns else col_rec)
+    yp24["delta_opportunities"] = yoy(yp23, yp24, "opportunities")
+    yp24["delta_ppr_pg"] = yoy(yp23, yp24, "ppr_per_game")
+
+    # Weekly consistency + team shares (optional)
+    yp24["weekly_ppr_mean"] = np.nan
+    yp24["weekly_ppr_std"]  = np.nan
+    yp24["weekly_ppr_cv"]   = np.nan
+    yp24["target_share"]    = np.nan
+    yp24["rush_share"]      = np.nan
+
+    if wp is not None and len(wp):
+        w_name = first_present(wp, name_candidates)
+        if not w_name:
+            wf = first_present(wp, first_candidates)
+            wl = first_present(wp, last_candidates)
+            if wf and wl:
+                wp["player_name"] = wp[wf].astype(str).str.strip() + " " + wp[wl].astype(str).str.strip()
+                w_name = "player_name"
+        w_pos = first_present(wp, pos_candidates) or "position"
+        w_team = first_present(wp, team_candidates) or "team"
+        w_season = first_present(wp, season_candidates) or "season"
+        w_week = first_present(wp, ["week","wk"]) or "week"
+
+        w_pass_yds = first_present(wp, pass_yds_c)
+        w_pass_td  = first_present(wp, pass_td_c)
+        w_int      = first_present(wp, int_c)
+        w_rush_yds = first_present(wp, rush_yds_c)
+        w_rush_td  = first_present(wp, rush_td_c)
+        w_rec      = first_present(wp, rec_c)
+        w_rec_yds  = first_present(wp, rec_yds_c)
+        w_rec_td   = first_present(wp, rec_td_c)
+        w_tgt      = first_present(wp, tgt_c)
+        w_rush_att = first_present(wp, rush_att_c)
+
+        w24 = wp[wp[w_season] == last_season].copy()
+        w24["ppr"] = 0.0
+        if w_pass_yds: w24["ppr"] += num(w24[w_pass_yds]) / 25.0
+        if w_pass_td:  w24["ppr"] += num(w24[w_pass_td]) * 4.0
+        if w_int:      w24["ppr"] -= num(w24[w_int]) * 2.0
+        if w_rush_yds: w24["ppr"] += num(w24[w_rush_yds]) / 10.0
+        if w_rush_td:  w24["ppr"] += num(w24[w_rush_td]) * 6.0
+        if w_rec:      w24["ppr"] += num(w24[w_rec]) * 1.0
+        if w_rec_yds:  w24["ppr"] += num(w24[w_rec_yds]) / 10.0
+        if w_rec_td:   w24["ppr"] += num(w24[w_rec_td]) * 6.0
+
+        cons = (
+            w24.groupby([w_name, w_pos, w_team])["ppr"]
+            .agg(["mean","std","count"])
+            .reset_index()
+            .rename(columns={"mean":"weekly_ppr_mean","std":"weekly_ppr_std","count":"games"})
+        )
+        cons["weekly_ppr_cv"] = safe_div(cons["weekly_ppr_std"], cons["weekly_ppr_mean"])
+
+        yp24 = yp24.merge(cons[[w_name,"weekly_ppr_mean","weekly_ppr_std","weekly_ppr_cv"]],
+                          left_on=[col_player_name], right_on=[w_name], how="left")
+
+        # Shares (from player‑weekly aggregates)
+        tot = w24.groupby([w_team, w_season]).agg(
+            team_targets_from_players = (w_tgt, "sum") if w_tgt in w24.columns else (w_team,"count"),
+            team_rush_att_from_players = (w_rush_att, "sum") if w_rush_att in w24.columns else (w_team,"count"),
+        ).reset_index()
+
+        agg = w24.groupby([w_name, w_team, w_season]).agg(
+            targets = (w_tgt, "sum") if w_tgt in w24.columns else (w_team, "count"),
+            rush_att = (w_rush_att, "sum") if w_rush_att in w24.columns else (w_team, "count"),
+        ).reset_index()
+
+        shares = agg.merge(tot, on=[w_team, w_season], how="left")
+        shares["target_share"] = safe_div(shares["targets"], shares["team_targets_from_players"])
+        shares["rush_share"]   = safe_div(shares["rush_att"], shares["team_rush_att_from_players"])
+
+        yp24 = yp24.merge(shares[[w_name,"target_share","rush_share"]],
+                          left_on=[col_player_name], right_on=[w_name], how="left")
+
+    # Pos normalization
+    pos_series = yp24[col_pos].astype(str).str.upper().fillna("")
+    yp24["pos_clean"] = pos_series.replace({"HB":"RB","TB":"RB","FB":"RB"})
+
+    yp24["yards_per_touch"] = safe_div(
+        num(yp24.get(col_rush_yds, 0)) + num(yp24.get(col_rec_yds, 0)),
+        num(yp24.get(col_rush_att, 0)) + num(yp24.get(col_rec, 0)),
+    )
+    yp24["td_rate_rec"]  = safe_div(num(yp24.get(col_rec_td, 0)), num(yp24.get(col_rec, 0)))
+    yp24["td_rate_rush"] = safe_div(num(yp24.get(col_rush_td, 0)), num(yp24.get(col_rush_att, 0)))
+    yp24["td_rate_pass"] = safe_div(num(yp24.get(col_pass_td, 0)), num(yp24.get(col_pass_att, 0)))
+
+    for m in ["ppr_per_game","opportunities","yptarget","ypr","ypc","yards_per_touch","delta_targets","delta_opportunities","delta_ppr_pg","weekly_ppr_cv","ypa"]:
+        if m not in yp24.columns:
+            yp24[m] = 0.0
+        yp24[f"z_{m}"] = zscore(yp24[m])
+
+    def age_bonus(age, pos):
+        if pd.isna(age): return 0.0
+        if pos in ("WR","TE"):
+            if 22 <= age <= 26: return 0.7
+            if 27 <= age <= 29: return 0.3
+            if age < 22: return 0.4
+            return -0.2 if age >= 30 else 0.0
+        if pos == "RB":
+            if 22 <= age <= 25: return 0.8
+            if 26 <= age <= 27: return 0.3
+            return -0.4 if age >= 28 else (0.2 if age < 22 else 0.0)
+        if pos == "QB":
+            if 24 <= age <= 30: return 0.3
+            if 31 <= age <= 34: return 0.1
+            return -0.1 if age > 35 else 0.2
+        return 0.0
+
+    def breakout_score(row):
+        pos = row["pos_clean"]; age = row.get("age_2025", np.nan)
+        base = 0.0
+        if pos == "WR":
+            base += 0.9*row["z_ppr_per_game"] * 0.3
+            base += 1.2*row["z_yptarget"] * 0.4
+            base += 1.4*row["z_delta_targets"] * 0.6
+            base += 1.0*row["z_delta_ppr_pg"] * 0.4
+            base += 1.1*row["z_opportunities"] * 0.3
+            base += 1.3*(row.get("target_share", 0) if not pd.isna(row.get("target_share", np.nan)) else 0.0) * 0.5
+            base += age_bonus(age, "WR")
+            if row["ppr_per_game"] >= 18: base -= 0.6
+        elif pos == "RB":
+            base += 0.8*row["z_ppr_per_game"] * 0.3
+            base += 1.2*row["yards_per_touch"] * 0.1 + 1.2*row["z_yards_per_touch"] * 0.5
+            base += 1.4*row["z_delta_opportunities"] * 0.7
+            base += 1.0*row["z_delta_ppr_pg"] * 0.4
+            base += 1.1*row["z_opportunities"] * 0.4
+            base += 1.3*(row.get("rush_share", 0) if not pd.isna(row.get("rush_share", np.nan)) else 0.0) * 0.6
+            base += age_bonus(age, "RB")
+            if row["ppr_per_game"] >= 18: base -= 0.6
+        elif pos == "TE":
+            base += 0.8*row["z_ppr_per_game"] * 0.3
+            base += 1.2*row["z_yptarget"] * 0.5
+            base += 1.3*row["z_delta_targets"] * 0.6
+            base += 1.0*row["z_delta_ppr_pg"] * 0.4
+            base += 1.0*row["z_opportunities"] * 0.3
+            base += 1.2*(row.get("target_share", 0) if not pd.isna(row.get("target_share", np.nan)) else 0.0) * 0.5
+            base += age_bonus(age, "TE")
+            if row["ppr_per_game"] >= 15: base -= 0.5
+        elif pos == "QB":
+            base += 0.9*row["z_ppr_per_game"] * 0.4
+            base += 1.2*row["z_ypa"] * 0.6
+            gp_val = row.get("gp", 0.0)
+            ry_val = row.get("rush_yds", 0.0)
+            try:
+                gp_f = float(gp_val) if gp_val is not None else 0.0
+                ry_f = float(ry_val) if ry_val is not None else 0.0
+            except Exception:
+                gp_f, ry_f = 0.0, 0.0
+            rush_per_g = (ry_f / gp_f) if gp_f else 0.0
+            base += 0.02 * rush_per_g
+            base += 1.0*row["z_delta_ppr_pg"] * 0.5
+            base += age_bonus(age, "QB")
+            if row["ppr_per_game"] >= 22: base -= 0.6
+        return float(base)
+
+    def fade_score(row):
+        pos = row["pos_clean"]; age = row.get("age_2025", np.nan)
+        base = 0.0
+        if pos in ("WR","TE"):
+            base += row.get("td_rate_rec", 0.0) * 3.0 - (row.get("target_share", 0.0) if not pd.isna(row.get("target_share", np.nan)) else 0.0)
+            base += -1.0 * row["z_yptarget"] * 0.4
+            base += -1.2 * row["z_delta_targets"] * 0.6
+            if isinstance(age, (int, float)) and age >= 29: base += 0.3
+        elif pos == "RB":
+            base += row.get("td_rate_rush", 0.0) * 3.0 - (row.get("rush_share", 0.0) if not pd.isna(row.get("rush_share", np.nan)) else 0.0)
+            base += -1.0 * row["z_yards_per_touch"] * 0.5
+            base += -1.2 * row["z_delta_opportunities"] * 0.7
+            if isinstance(age, (int, float)) and age >= 27: base += 0.4
+        elif pos == "QB":
+            base += row.get("td_rate_pass", 0.0) * 2.5 - row.get("ypa", 0.0) * 0.03
+            base += -1.1 * row["z_delta_ppr_pg"] * 0.6
+            if isinstance(age, (int, float)) and age >= 33: base += 0.3
+        if row["ppr_per_game"] >= 18 and pos in ("WR","RB","TE"):
+            if pos != "RB" and row.get("yptarget", 0.0) < 7.0: base += 0.4
+            if pos == "RB" and row.get("yards_per_touch", 0.0) < 4.5: base += 0.4
+        return float(base)
+
+    yp24["breakout_score"] = yp24.apply(breakout_score, axis=1)
+    yp24["fade_score"] = yp24.apply(fade_score, axis=1)
+
+    def topn(df, pos, col, n=20):
+        sub = df[df["pos_clean"]==pos].copy()
+        sub = sub.sort_values(col, ascending=False).head(n)
+        keep = ["player_name", "team", "age_2025", "ppr_per_game", "weekly_ppr_cv",
+                "target_share", "rush_share", "yptarget", "ypc", "yards_per_touch",
+                "delta_targets", "delta_opportunities", "delta_ppr_pg", col]
+        keep = [k for k in keep if k in sub.columns]
+        return sub[keep]
+
+    leaderboards = {}
+    for pos in ["QB","RB","WR","TE"]:
+        leaderboards[f"{pos}_breakouts"] = topn(yp24, pos, "breakout_score", n=20)
+        leaderboards[f"{pos}_fades"] = topn(yp24, pos, "fade_score", n=15)
+
+    cons = yp24.copy()
+    games_played = num(cons[col_games]) if (col_games and col_games in cons.columns) else pd.Series(0, index=cons.index)
+    cons["games_played"] = games_played
+    cons = cons[(cons["ppr_per_game"] >= 10) & (cons["games_played"] >= 8)]
+    cons = cons.sort_values("weekly_ppr_cv", ascending=True)
+
+    # Excel writer that gracefully falls back
+    try:
+        with pd.ExcelWriter(out_path, engine="xlsxwriter") as xw:
+            yp24.to_excel(xw, sheet_name="master_2024_features", index=False)
+            for k, v in leaderboards.items():
+                v.to_excel(xw, sheet_name=k[:31], index=False)
+            cons[["player_name","pos_clean","team","ppr_per_game","weekly_ppr_cv","games_played"]].rename(columns={"pos_clean":"position"}).to_excel(xw, sheet_name="consistency", index=False)
+    except Exception:
+        with pd.ExcelWriter(out_path, engine="openpyxl") as xw:
+            yp24.to_excel(xw, sheet_name="master_2024_features", index=False)
+            for k, v in leaderboards.items():
+                v.to_excel(xw, sheet_name=k[:31], index=False)
+            cons[["player_name","pos_clean","team","ppr_per_game","weekly_ppr_cv","games_played"]].rename(columns={"pos_clean":"position"}).to_excel(xw, sheet_name="consistency", index=False)
+
+    return yp24, leaderboards, cons
+
+# ---------------------- Main ----------------------
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--yearly_player_off", type=str, default="/mnt/data/yearly_player_stats_offense.csv")
+    ap.add_argument("--weekly_player_off", type=str, default="/mnt/data/weekly_player_stats_offense.csv")
+    ap.add_argument("--yearly_team_off",   type=str, default="/mnt/data/yearly_team_stats_offense.csv")
+    ap.add_argument("--weekly_team_off",   type=str, default="/mnt/data/weekly_team_stats_offense.csv")
+    ap.add_argument("--out", type=str, default="/mnt/data/nfl_2025_insights.xlsx")
+    ap.add_argument("--demo", action="store_true")
+    args = ap.parse_args()
+
+    if args.demo:
+        yp, wp, yt, wt = build_demo_data()
+    else:
+        yp = smart_read_csv(args.yearly_player_off)
+        wp = smart_read_csv(args.weekly_player_off)
+        yt = smart_read_csv(args.yearly_team_off)
+        wt = smart_read_csv(args.weekly_team_off)
+        if yp is None:
+            raise SystemExit("ERROR: Could not read yearly_player_off CSV. Use --demo to test pipeline.")
+
+    compute(yp, wp, yt, wt, out_path=args.out)
+    print(f"Done. Exported: {args.out}")
+
+if __name__ == "__main__":
+    main()
