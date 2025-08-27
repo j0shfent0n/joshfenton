@@ -1,0 +1,600 @@
+import argparse
+from datetime import datetime
+import numpy as np
+import pandas as pd
+
+
+class FQHCDeepDiveAnalyzer:
+    """
+    Advanced No-Show Analysis Engine for FQHC Leadership
+
+    Includes:
+      • Robust column detection (case/space-insensitive) for APPT_STATUS_C, CONTACT_DATE, etc.
+      • Date filter (default: 2024-08-01 → 2025-07-31)
+      • Patient profiles with flags
+      • Pareto analysis (1→100%) + Show_Rate
+      • Double-booking model with revenue ($/visit)
+      • Excel export with multiple sheets
+    """
+
+    def __init__(self):
+        self.df = None
+        self.patient_profiles = None
+        self.department_insights = {}
+        self.high_risk_patients = None
+        self.pareto_results = {}   # safe (not a method name)
+        self.epic_toolkit = {}
+        self.double_booking = {}
+
+    # -----------------------------
+    # Helper: robust column resolver
+    # -----------------------------
+    def _pick_col(self, df, candidates, rename_to=None, to_datetime=False):
+        """
+        Robustly find a column by name, ignoring case and surrounding spaces.
+        If found, optionally rename to `rename_to` and/or convert to datetime.
+        Returns (df, chosen_name_or_None).
+        """
+        lookup = {str(c).strip().lower(): c for c in df.columns}
+        for cand in candidates:
+            key = str(cand).strip().lower()
+            if key in lookup:
+                found = lookup[key]
+                target = rename_to or found
+                if rename_to and found != rename_to:
+                    df = df.rename(columns={found: rename_to})
+                if to_datetime:
+                    df[target] = pd.to_datetime(df[target], errors='coerce')
+                return df, target
+        return df, None
+
+    # -------------------------
+    # 1) LOAD + PREP
+    # -------------------------
+    def load_and_prepare_data(self, data_path, start_date="2024-08-01", end_date="2025-07-31"):
+        print("🔄 Loading and preparing data for deep dive analysis...")
+        self.df = pd.read_excel(data_path)
+
+        # (Uncomment for troubleshooting headers)
+        # print("🔎 Columns read:", [repr(c) for c in self.df.columns.tolist()])
+
+        # Normalize key columns (accept common variants)
+        self.df, pat_col = self._pick_col(
+            self.df, ["PAT_MRN_ID", "pat_mrn_id", "patient_mrn", "patient_id"],
+            rename_to="PAT_MRN_ID"
+        )
+        self.df, date_col = self._pick_col(
+            self.df, ["CONTACT_DATE", "contact_date", "APPT_DATE", "appt_date", "APPOINTMENT_DATE", "appointment_date", "date"],
+            rename_to="CONTACT_DATE", to_datetime=True
+        )
+        if pat_col is None or date_col is None:
+            raise ValueError(
+                "Could not find patient and/or date columns. "
+                "Expected something like PAT_MRN_ID and CONTACT_DATE/APPT_DATE."
+            )
+
+        # Status columns (numeric codes, text, or an existing NO_SHOW)
+        self.df, status_num_col = self._pick_col(self.df, ["APPT_STATUS_C", "appt_status_c"], rename_to="APPT_STATUS_C")
+        self.df, status_txt_col = self._pick_col(self.df, ["APPT_STATUS", "appt_status", "STATUS", "status"], rename_to="APPT_STATUS")
+        self.df, noshow_col = self._pick_col(self.df, ["NO_SHOW", "no_show", "NOSHOW", "noshow"], rename_to="NO_SHOW")
+
+        # Build NO_SHOW and filter to completed(2) + no-show(4) when possible
+        status_filtered = False
+        if status_num_col is not None:
+            # Numeric codes standard: 1 scheduled, 2 completed, 3 canceled, 4 no-show
+            before = len(self.df)
+            self.df = self.df[self.df[status_num_col].isin([2, 4])]
+            print(f"📊 Status filter (2/4): kept {len(self.df):,} of {before:,}")
+            self.df["NO_SHOW"] = (self.df[status_num_col] == 4).astype(int)
+            status_filtered = True
+        elif status_txt_col is not None:
+            s = self.df[status_txt_col].astype(str).str.lower().str.strip()
+            completed_mask = s.isin(["completed", "complete", "done", "finished", "show", "kept"])
+            noshow_mask   = s.isin(["no show", "no-show", "noshow", "did not keep", "dnka", "dna", "did not attend"])
+            keep_mask = completed_mask | noshow_mask
+            if keep_mask.any():
+                before = len(self.df)
+                self.df = self.df[keep_mask].copy()
+                print(f"📊 Status filter (text): kept {len(self.df):,} of {before:,}")
+                self.df["NO_SHOW"] = noshow_mask[keep_mask].astype(int).values
+                status_filtered = True
+
+        if not status_filtered:
+            if noshow_col is None:
+                available = ", ".join(self.df.columns)
+                raise ValueError(
+                    "Could not determine appointment status to build NO_SHOW. "
+                    "Provide APPT_STATUS_C (2/4), a text APPT_STATUS, or a NO_SHOW column. "
+                    f"Columns found: {available}"
+                )
+            # Ensure NO_SHOW is 0/1
+            self.df["NO_SHOW"] = pd.to_numeric(self.df["NO_SHOW"], errors="coerce").fillna(0).astype(int)
+            print("ℹ️ Using provided NO_SHOW column without status filtering.")
+
+        # Date window (inclusive)
+        start = pd.Timestamp(start_date)
+        end = pd.Timestamp(end_date)
+        pre_date = len(self.df)
+        self.df = self.df[(self.df["CONTACT_DATE"] >= start) & (self.df["CONTACT_DATE"] <= end)].copy()
+        print(f"📅 Filtered to {start.date()} → {end.date()} | kept {len(self.df):,} of {pre_date:,} rows")
+
+        # Optional demographics (safe if missing)
+        for col in ["RACE", "ETHNICITY", "LANGUAGE", "ADDRESS_ZIP"]:
+            if col in self.df.columns:
+                self.df[col] = self.df[col].fillna("Not Specified")
+        if "ADDRESS_ZIP" in self.df.columns:
+            self.df["ADDRESS_ZIP"] = (
+                self.df["ADDRESS_ZIP"].astype(str).str.replace("nan", "", regex=False).str[:5]
+            ).replace(["", "00000", "None"], "Not Specified")
+
+        # Birthdate → Age (if present)
+        self.df, dob_col = self._pick_col(self.df, ["BIRTH_DATE", "birth_date", "DOB", "dob"], rename_to="BIRTH_DATE", to_datetime=True)
+        if dob_col is not None:
+            self.df["AGE"] = (self.df["CONTACT_DATE"] - self.df["BIRTH_DATE"]).dt.days / 365.25
+        else:
+            self.df["AGE"] = np.nan
+
+        # Normalize department/specialty names if present
+        self.df, _ = self._pick_col(self.df, ["DEPARTMENT_NAME", "department_name"], rename_to="DEPARTMENT_NAME")
+        self.df, _ = self._pick_col(self.df, ["SPECIALTY_NAME", "name", "specialty_name", "SPECIALTY_C", "specialty_c"], rename_to="SPECIALTY_NAME")
+
+        print("✅ Data prepared!")
+        print(f"📈 Window no-show rate: {self.df['NO_SHOW'].mean():.1%}")
+        print(f"👥 Unique patients: {self.df['PAT_MRN_ID'].nunique():,}")
+        return self.df
+
+    # -------------------------
+    # 2) PATIENT PROFILES
+    # -------------------------
+    def create_patient_profiles(self):
+        print("\n" + "=" * 80)
+        print("👤 CREATING PATIENT PROFILES")
+        print("=" * 80)
+        
+        # Build aggregation dictionary dynamically based on available columns
+        agg_dict = {
+            'NO_SHOW': ['count', 'sum'],
+            'CONTACT_DATE': ['min', 'max'],
+            'AGE': 'mean'
+        }
+        
+        # Add optional columns only if they exist
+        if 'DEPARTMENT_NAME' in self.df.columns:
+            agg_dict['DEPARTMENT_NAME'] = lambda x: list(pd.Series(x).dropna().unique())
+        if 'SPECIALTY_NAME' in self.df.columns:
+            agg_dict['SPECIALTY_NAME'] = lambda x: list(pd.Series(x).dropna().unique())
+        if 'ADDRESS_ZIP' in self.df.columns:
+            agg_dict['ADDRESS_ZIP'] = 'first'
+        if 'RACE' in self.df.columns:
+            agg_dict['RACE'] = 'first'
+        if 'ETHNICITY' in self.df.columns:
+            agg_dict['ETHNICITY'] = 'first'
+        if 'LANGUAGE' in self.df.columns:
+            agg_dict['LANGUAGE'] = 'first'
+        
+        patient_stats = self.df.groupby('PAT_MRN_ID').agg(agg_dict)
+        
+        # Flatten column names dynamically
+        new_columns = ['Total_Appointments', 'Total_No_Shows', 'First_Appointment', 'Last_Appointment', 'AVG_AGE']
+        
+        # Add optional column names based on what was included
+        if 'DEPARTMENT_NAME' in agg_dict:
+            new_columns.insert(-1, 'Departments_Visited')  # Insert before AGE
+        else:
+            patient_stats['Departments_Visited'] = patient_stats.apply(lambda x: [], axis=1)
+            
+        if 'SPECIALTY_NAME' in agg_dict:
+            new_columns.insert(-1, 'Specialties_Visited')  # Insert before AGE
+        else:
+            patient_stats['Specialties_Visited'] = patient_stats.apply(lambda x: [], axis=1)
+            
+        if 'ADDRESS_ZIP' in agg_dict:
+            new_columns.insert(-1, 'ZIP_CODE')  # Insert before AGE
+        else:
+            patient_stats['ZIP_CODE'] = "Not Specified"
+            
+        if 'RACE' in agg_dict:
+            new_columns.insert(-1, 'RACE')  # Insert before AGE  
+        else:
+            patient_stats['RACE'] = "Not Specified"
+            
+        if 'ETHNICITY' in agg_dict:
+            new_columns.insert(-1, 'ETHNICITY')  # Insert before AGE
+        else:
+            patient_stats['ETHNICITY'] = "Not Specified"
+            
+        if 'LANGUAGE' in agg_dict:
+            new_columns.insert(-1, 'LANGUAGE')  # Insert before AGE
+        else:
+            patient_stats['LANGUAGE'] = "Not Specified"
+        
+        # Flatten multi-level columns for the basic aggregations
+        if isinstance(patient_stats.columns, pd.MultiIndex):
+            flat_columns = []
+            for col in patient_stats.columns:
+                if isinstance(col, tuple):
+                    if col[1] in ['count', 'sum', 'min', 'max', 'mean']:
+                        flat_columns.append(col)
+                    else:
+                        flat_columns.append(col[0])  # For lambda functions
+                else:
+                    flat_columns.append(col)
+            patient_stats.columns = flat_columns
+            
+            # Rename the multi-level columns to simpler names
+            column_mapping = {}
+            for i, col in enumerate(patient_stats.columns):
+                if isinstance(col, tuple):
+                    if col == ('NO_SHOW', 'count'):
+                        column_mapping[col] = 'Total_Appointments'
+                    elif col == ('NO_SHOW', 'sum'):
+                        column_mapping[col] = 'Total_No_Shows'
+                    elif col == ('CONTACT_DATE', 'min'):
+                        column_mapping[col] = 'First_Appointment'
+                    elif col == ('CONTACT_DATE', 'max'):
+                        column_mapping[col] = 'Last_Appointment'
+                    elif col == ('AGE', 'mean'):
+                        column_mapping[col] = 'AVG_AGE'
+                elif col == 'DEPARTMENT_NAME':
+                    column_mapping[col] = 'Departments_Visited'
+                elif col == 'SPECIALTY_NAME':
+                    column_mapping[col] = 'Specialties_Visited'
+                elif col == 'ADDRESS_ZIP':
+                    column_mapping[col] = 'ZIP_CODE'
+                    
+            patient_stats = patient_stats.rename(columns=column_mapping)
+        
+        patient_stats = patient_stats.round(3)
+
+        patient_stats['No_Show_Rate'] = patient_stats['Total_No_Shows'] / patient_stats['Total_Appointments']
+        patient_stats['Visit_Span_Days'] = (patient_stats['Last_Appointment'] - patient_stats['First_Appointment']).dt.days
+        # List lengths (guard if some groups lack those fields)
+        patient_stats['Num_Departments'] = patient_stats['Departments_Visited'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+        patient_stats['Num_Specialties'] = patient_stats['Specialties_Visited'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+
+        # Flags
+        patient_stats['HIGH_RISK_FLAG'] = (patient_stats['Total_Appointments'] >= 3) & (patient_stats['No_Show_Rate'] >= 0.6)
+        patient_stats['CHRONIC_NO_SHOW'] = patient_stats['Total_No_Shows'] >= 5
+        patient_stats['DEPARTMENT_HOPPER'] = patient_stats['Num_Departments'] >= 3
+        patient_stats['RECENT_PATIENT'] = (pd.Timestamp.now() - patient_stats['First_Appointment']).dt.days <= 365
+
+        self.patient_profiles = patient_stats
+        print(f"👥 Profiles created for {len(self.patient_profiles):,} patients")
+        return self.patient_profiles
+
+    # -------------------------
+    # 3) PARETO (1 → 100%) + SHOW RATE
+    # -------------------------
+    def pareto_analysis(self):
+        """
+        Build full Pareto breakdown (1..100%) and a patient-level table (sorted by Total_No_Shows),
+        including Show_Rate for each patient.
+        """
+        print("\n" + "=" * 80)
+        print("📊 PARETO ANALYSIS")
+        print("=" * 80)
+        if self.patient_profiles is None:
+            self.create_patient_profiles()
+
+        pts = self.patient_profiles.sort_values('Total_No_Shows', ascending=False).copy()
+        pts['Cumulative_No_Shows'] = pts['Total_No_Shows'].cumsum()
+        total_no_shows = int(self.df['NO_SHOW'].sum())
+        total_patients = int(len(pts))
+        pts['Cumulative_No_Show_Percent'] = (pts['Cumulative_No_Shows'] / max(total_no_shows, 1)) * 100.0
+        pts['Patient_Rank'] = np.arange(1, len(pts) + 1)
+        pts['Patient_Percent'] = (pts['Patient_Rank'] / max(total_patients, 1)) * 100.0
+        pts['Show_Rate'] = 1.0 - pts['No_Show_Rate']  # requested column
+
+        # Build 1..100 breakdown
+        cum_arr = pts['Cumulative_No_Shows'].to_numpy()
+        breakdown_rows = []
+        for percent in range(1, 101):
+            target_no_shows = total_no_shows * (percent / 100.0)
+            if len(cum_arr) == 0:
+                patients_needed = 0
+                patients_percent = 0.0
+                min_no_shows = 0
+                cumulative_no_shows = 0
+            else:
+                idx = int(np.searchsorted(cum_arr, target_no_shows, side='left'))
+                idx = min(idx, len(pts) - 1)
+                cutoff = pts.iloc[idx]
+                patients_needed = int(cutoff['Patient_Rank'])
+                patients_percent = (patients_needed / max(total_patients, 1)) * 100.0
+                min_no_shows = int(cutoff['Total_No_Shows'])
+                cumulative_no_shows = int(cutoff['Cumulative_No_Shows'])
+
+            breakdown_rows.append({
+                'Target_No_Show_%': percent,
+                'Target_No_Shows': int(round(target_no_shows)),
+                'Patients_Needed': patients_needed,
+                'Patients_Share_%': float(patients_percent),
+                'Min_No_Shows_Per_Included_Patient': min_no_shows,
+                'Cumulative_No_Shows': cumulative_no_shows
+            })
+        breakdown_df = pd.DataFrame(breakdown_rows)
+
+        row80 = breakdown_df.loc[breakdown_df['Target_No_Show_%'] == 80].iloc[0]
+        print(f"📌 80% of no-shows are caused by {row80['Patients_Needed']:,} patients "
+              f"({row80['Patients_Share_%']:.1f}% of all patients).")
+
+        self.pareto_results = {
+            'patients_by_no_shows': pts,
+            'pareto_breakdown': breakdown_df,
+            'pareto_points': {int(r['Target_No_Show_%']): {
+                'patients_needed': int(r['Patients_Needed']),
+                'patients_percent': float(r['Patients_Share_%']),
+                'min_no_shows': int(r['Min_No_Shows_Per_Included_Patient']),
+                'cumulative_no_shows': int(r['Cumulative_No_Shows'])
+            } for _, r in breakdown_df.iterrows()}
+        }
+        return self.pareto_results
+
+    # -------------------------
+    # 4) DOUBLE-BOOKING MODEL + REVENUE
+    # -------------------------
+    def double_booking_model(self, target_percent=80, revenue_per_visit=200.0):
+        """
+        Model double-booking for the cohort of patients who collectively account for `target_percent` of no-shows.
+        Outputs pair probabilities and revenue scenarios. Stores to self.double_booking.
+        """
+        print("\n" + "=" * 80)
+        print("🧮 DOUBLE-BOOKING SCENARIO MODEL")
+        print("=" * 80)
+
+        if not self.pareto_results or 'pareto_breakdown' not in self.pareto_results:
+            self.pareto_analysis()
+
+        pb = self.pareto_results['pareto_breakdown']
+        if pb.empty:
+            print("ℹ️ No Pareto breakdown; skipping.")
+            self.double_booking = {}
+            return
+
+        row_target = pb.loc[pb['Target_No_Show_%'] == int(target_percent)]
+        if row_target.empty:
+            print(f"ℹ️ Could not find Target_No_Show_% == {target_percent}.")
+            self.double_booking = {}
+            return
+
+        patients_needed = int(row_target.iloc[0]['Patients_Needed'])
+        top_patients = self.pareto_results['patients_by_no_shows'].head(patients_needed).copy()
+        cohort_ids = top_patients.index
+
+        prof = self.patient_profiles.loc[cohort_ids, ['No_Show_Rate', 'Total_Appointments']].copy()
+        prof['Show_Rate'] = 1.0 - prof['No_Show_Rate']
+        prof = prof[prof['Total_Appointments'] > 0]
+        total_appts = int(prof['Total_Appointments'].sum())
+        if total_appts == 0:
+            print("ℹ️ Zero appointments in cohort; skipping.")
+            self.double_booking = {}
+            return
+
+        # Appointment-weighted moments
+        sum_s = float((prof['Show_Rate'] * prof['Total_Appointments']).sum())
+        sum_s2 = float(((prof['Show_Rate'] ** 2) * prof['Total_Appointments']).sum())
+        mu = sum_s / total_appts
+        if total_appts >= 2:
+            e_prod = ((sum_s ** 2) - sum_s2) / (total_appts * (total_appts - 1))
+        else:
+            e_prod = mu ** 2
+
+        p_both = e_prod
+        p_atleast_one = 2 * mu - e_prod
+        p_neither = 1 - p_atleast_one
+
+        print(f"👥 Cohort size (for {target_percent}% of no-shows): {len(cohort_ids):,} patients, {total_appts:,} appts")
+        print(f"   μ (avg show rate): {mu:.3f} | P(≥1): {p_atleast_one:.3f} | P(both): {p_both:.3f} | P(none): {p_neither:.3f}")
+
+        # Baseline revenue
+        revenue_baseline = revenue_per_visit * mu * total_appts
+
+        # Pairing
+        n_pairs = total_appts // 2
+        leftover = total_appts - 2 * n_pairs
+
+        # Conservative: at most one can be seen in a double-booked slot
+        revenue_conservative_pairs = revenue_per_visit * (n_pairs * p_atleast_one + leftover * mu)
+
+        # Backfill freed slots with non-cohort average show rate
+        non_cohort_mask = ~self.df['PAT_MRN_ID'].isin(cohort_ids)
+        mu_fill = 1.0 - float(self.df.loc[non_cohort_mask, 'NO_SHOW'].mean()) if non_cohort_mask.any() else (1.0 - float(self.df['NO_SHOW'].mean()))
+        freed_slots = n_pairs
+        revenue_backfill = revenue_per_visit * mu_fill * freed_slots
+        revenue_conservative_total = revenue_conservative_pairs + revenue_backfill
+        incremental_conservative = revenue_conservative_total - revenue_baseline
+
+        # Aggressive: you can see both if both show (time-compressed), plus backfill
+        revenue_aggressive_pairs = revenue_per_visit * (n_pairs * (2 * mu) + leftover * mu)
+        revenue_aggressive_with_backfill = revenue_aggressive_pairs + revenue_backfill
+        incremental_aggressive_with_backfill = revenue_aggressive_with_backfill - revenue_baseline
+
+        self.double_booking = {
+            'target_percent': int(target_percent),
+            'cohort_patients': int(len(cohort_ids)),
+            'cohort_appointments': int(total_appts),
+            'mu_show_appointment_weighted': float(mu),
+            'pair_prob_at_least_one': float(p_atleast_one),
+            'pair_prob_both': float(p_both),
+            'pair_prob_neither': float(p_neither),
+            'n_pairs': int(n_pairs),
+            'leftover_single_appointments': int(leftover),
+            'freed_slots': int(freed_slots),
+            'mu_fill_backfill': float(mu_fill),
+            'revenue_per_visit': float(revenue_per_visit),
+            'revenue_baseline': float(revenue_baseline),
+            'revenue_conservative_pairs_only': float(revenue_conservative_pairs),
+            'revenue_backfill': float(revenue_backfill),
+            'revenue_conservative_total': float(revenue_conservative_total),
+            'incremental_conservative_total': float(incremental_conservative),
+            'revenue_aggressive_pairs': float(revenue_aggressive_pairs),
+            'revenue_aggressive_with_backfill': float(revenue_aggressive_with_backfill),
+            'incremental_aggressive_with_backfill': float(incremental_aggressive_with_backfill),
+        }
+
+        print("\n💵 REVENUE SUMMARY (@ ${:.0f}/visit)".format(revenue_per_visit))
+        print(f"   Baseline: ${revenue_baseline:,.0f}")
+        print(f"   Conservative (pairs+leftover): ${revenue_conservative_pairs:,.0f}")
+        print(f"   + Backfill freed {freed_slots:,} slots (μ_fill={mu_fill:.2f}): +${revenue_backfill:,.0f}")
+        print(f"   → Conservative TOTAL: ${revenue_conservative_total:,.0f}  "
+              f"(Incremental: ${incremental_conservative:,.0f})")
+        print(f"   Aggressive (see both if both show): ${revenue_aggressive_pairs:,.0f}")
+        print(f"   + Backfill: +${revenue_backfill:,.0f}")
+        print(f"   → Aggressive TOTAL: ${revenue_aggressive_with_backfill:,.0f}  "
+              f"(Incremental: ${incremental_aggressive_with_backfill:,.0f})")
+
+        return self.double_booking
+
+    # -------------------------
+    # 5) EPIC TOOLKIT (placeholder)
+    # -------------------------
+    def create_epic_toolkit(self):
+        self.epic_toolkit = {"note": "Configure EPIC flags by tiers using No_Show_Rate & history."}
+        return self.epic_toolkit
+
+    # -------------------------
+    # 6) EXPORT
+    # -------------------------
+    def export_results_to_excel(self, output_path='FQHC_DeepDive_Analysis_Report.xlsx'):
+        print(f"\n📊 Exporting to {output_path}...")
+        
+        if not output_path.lower().endswith('.xlsx'):
+            output_path = output_path + '.xlsx'
+        
+        def stringify_lists(df, cols):
+            df = df.copy()
+            for c in cols:
+                if c in df.columns:
+                    df[c] = df[c].apply(lambda x: '; '.join(x) if isinstance(x, list) else x)
+            return df
+
+        try:
+            with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+                summary = {
+                    'Metric': [
+                        'Total Appointments (window)',
+                        'Overall No-Show Rate',
+                        'Unique Patients',
+                        'Analysis Period',
+                        'Report Generated'
+                    ],
+                    'Value': [
+                        f"{len(self.df):,}",
+                        f"{self.df['NO_SHOW'].mean():.1%}",
+                        f"{self.df['PAT_MRN_ID'].nunique():,}",
+                        f"{self.df['CONTACT_DATE'].min().strftime('%Y-%m-%d')} → {self.df['CONTACT_DATE'].max().strftime('%Y-%m-%d')}",
+                        datetime.now().strftime('%Y-%m-%d %H:%M')
+                    ]
+                }
+                pd.DataFrame(summary).to_excel(writer, sheet_name='Executive_Summary', index=False)
+
+                if self.patient_profiles is not None:
+                    pp_clean = stringify_lists(self.patient_profiles, ['Departments_Visited', 'Specialties_Visited'])
+                    pp_clean.to_excel(writer, sheet_name='Patient_Profiles')
+
+                if self.pareto_results and 'patients_by_no_shows' in self.pareto_results:
+                    cols = ['Total_No_Shows', 'No_Show_Rate', 'Show_Rate',
+                            'Total_Appointments', 'Cumulative_No_Shows', 'Cumulative_No_Show_Percent',
+                            'Patient_Rank', 'Patient_Percent']
+                    present = [c for c in cols if c in self.pareto_results['patients_by_no_shows'].columns]
+                    self.pareto_results['patients_by_no_shows'][present].to_excel(writer, sheet_name='Pareto_Analysis')
+
+                if self.pareto_results and 'pareto_breakdown' in self.pareto_results:
+                    self.pareto_results['pareto_breakdown'].to_excel(writer, sheet_name='Pareto_Breakdown', index=False)
+
+                if self.double_booking:
+                    db = self.double_booking
+                    db_rows = [
+                        {'Metric': 'Target No-Show %', 'Value': db['target_percent']},
+                        {'Metric': 'Cohort Patients', 'Value': db['cohort_patients']},
+                        {'Metric': 'Cohort Appointments', 'Value': db['cohort_appointments']},
+                        {'Metric': 'Avg Show Rate (μ)', 'Value': f"{db['mu_show_appointment_weighted']:.3f}"},
+                        {'Metric': 'P(≥1 shows)', 'Value': f"{db['pair_prob_at_least_one']:.3f}"},
+                        {'Metric': 'P(both show)', 'Value': f"{db['pair_prob_both']:.3f}"},
+                        {'Metric': 'P(neither shows)', 'Value': f"{db['pair_prob_neither']:.3f}"},
+                        {'Metric': 'Pairs (double-booked slots)', 'Value': db['n_pairs']},
+                        {'Metric': 'Leftover Singles', 'Value': db['leftover_single_appointments']},
+                        {'Metric': 'Freed Slots', 'Value': db['freed_slots']},
+                        {'Metric': 'Backfill Show Rate (μ_fill)', 'Value': f"{db['mu_fill_backfill']:.3f}"},
+                        {'Metric': 'Revenue/Visit', 'Value': f"${db['revenue_per_visit']:,.0f}"},
+                        {'Metric': 'Baseline Revenue', 'Value': f"${db['revenue_baseline']:,.0f}"},
+                        {'Metric': 'Conservative (pairs only)', 'Value': f"${db['revenue_conservative_pairs_only']:,.0f}"},
+                        {'Metric': 'Backfill Revenue', 'Value': f"${db['revenue_backfill']:,.0f}"},
+                        {'Metric': 'Conservative TOTAL', 'Value': f"${db['revenue_conservative_total']:,.0f}"},
+                        {'Metric': 'Incremental (Conservative)', 'Value': f"${db['incremental_conservative_total']:,.0f}"},
+                        {'Metric': 'Aggressive (pairs)', 'Value': f"${db['revenue_aggressive_pairs']:,.0f}"},
+                        {'Metric': 'Aggressive + Backfill TOTAL', 'Value': f"${db['revenue_aggressive_with_backfill']:,.0f}"},
+                        {'Metric': 'Incremental (Aggressive + Backfill)', 'Value': f"${db['incremental_aggressive_with_backfill']:,.0f}"},
+                    ]
+                    pd.DataFrame(db_rows).to_excel(writer, sheet_name='Double_Booking_Model', index=False)
+
+                if self.department_insights:
+                    pd.DataFrame(self.department_insights).T.to_excel(writer, sheet_name='Department_Analysis')
+
+            print("✅ Export complete.")
+                
+        except Exception as e:
+            print(f"❌ Export failed: {e}")
+            print(f"Attempted to write to: {output_path}")
+            fallback_path = "FQHC_Analysis_Report.xlsx"
+            print(f"Trying fallback filename: {fallback_path}")
+            try:
+                with pd.ExcelWriter(fallback_path, engine='openpyxl') as writer:
+                    summary = {
+                        'Metric': ['Total Appointments', 'No-Show Rate', 'Unique Patients'],
+                        'Value': [f"{len(self.df):,}", f"{self.df['NO_SHOW'].mean():.1%}", f"{self.df['PAT_MRN_ID'].nunique():,}"]
+                    }
+                    pd.DataFrame(summary).to_excel(writer, sheet_name='Summary', index=False)
+                print(f"✅ Fallback export successful to: {fallback_path}")
+            except Exception as e2:
+                print(f"❌ Fallback export also failed: {e2}")
+                raise e
+
+    def run_full_deep_dive(self, data_path, output_path,
+                           start_date="2024-08-01", end_date="2025-07-31",
+                           target_percent=80, revenue_per_visit=200.0):
+        print("🚀 FQHC DEEP DIVE ANALYSIS ENGINE")
+        print("=" * 80)
+        self.load_and_prepare_data(data_path, start_date=start_date, end_date=end_date)
+        self.create_patient_profiles()
+        self.pareto_analysis()
+        self.double_booking_model(target_percent=target_percent, revenue_per_visit=revenue_per_visit)
+        self.create_epic_toolkit()
+        self.export_results_to_excel(output_path)
+        print("\n🎉 DONE. Review the Excel report for actionable insights.")
+        return {
+            'patient_profiles': self.patient_profiles,
+            'pareto_results': self.pareto_results,
+            'double_booking': self.double_booking,
+            'epic_toolkit': self.epic_toolkit
+        }
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="No-Show Deep Dive for FQHC")
+    parser.add_argument('--input', required=True, help='Path to input Excel file')
+    parser.add_argument('--output', default='FQHC_DeepDive_Analysis_Report.xlsx', help='Path to output Excel file')
+    parser.add_argument('--start', default='2024-08-01', help='Start date (YYYY-MM-DD), default 2024-08-01')
+    parser.add_argument('--end', default='2025-07-31', help='End date (YYYY-MM-DD), default 2025-07-31')
+    parser.add_argument('--target', type=int, default=80, help='Pareto target percent (1..100), default 80')
+    parser.add_argument('--revenue', type=float, default=200.0, help='Revenue per visit, default 200')
+    return parser.parse_args()
+
+
+if __name__ == '__main__':
+    args = parse_args()
+    analyzer = FQHCDeepDiveAnalyzer()
+    try:
+        analyzer.run_full_deep_dive(
+            data_path=args.input,
+            output_path=args.output,
+            start_date=args.start,
+            end_date=args.end,
+            target_percent=args.target,
+            revenue_per_visit=args.revenue
+        )
+    except FileNotFoundError:
+        print("❌ Error: Could not find the input file.")
+        print(f"Check the path: {args.input}")
+    except Exception as e:
+        print(f"❌ An unexpected error occurred: {e}")
